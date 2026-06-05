@@ -2,26 +2,22 @@ from datetime import datetime
 import logging
 import os
 
-import requests
 from airflow.sdk import DAG, task
 from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerOperator
 from airflow.providers.amazon.aws.operators.athena import AthenaOperator
 
+from utils.ingestion import fetch_data
 from utils.parquet import records_to_parquet_bytes
 from utils.s3 import generate_s3_key, retrieve_from_s3, upload_parquet_to_s3, upload_to_s3
 from utils.transformation import transform_news as transform_news_records, transform_models as transform_models_records, transform_providers as transforms_providers_records
 
 NEWS_ENDPOINT = "https://tensorfeed.ai/api/news?limit=10"
 MODELS_ENDPOINT = "https://tensorfeed.ai/api/models"
+GPU_PRICING_ENDPOINT = "https://tensorfeed.ai/api/gpu/pricing"
+INTELLIGENCE_ENDPOINT = "https://tensorfeed.ai/api/intelligence"
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 
 logger = logging.getLogger(__name__)
-
-def _fetch_data(endpoint):
-    response = requests.get(endpoint, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
 
 with DAG(
     dag_id="ai-monitoring",
@@ -35,7 +31,7 @@ with DAG(
     ####################
     @task(task_id="fetch_news")
     def fetch_news():
-        data = _fetch_data(NEWS_ENDPOINT)
+        data = fetch_data(NEWS_ENDPOINT)
 
         logger.info("Fetched %s articles", len(data))
 
@@ -54,7 +50,7 @@ with DAG(
 
     @task(task_id="fetch_models")
     def fetch_models():
-        data = _fetch_data(MODELS_ENDPOINT)
+        data = fetch_data(MODELS_ENDPOINT)
 
         logger.info("Fetched %s models", len(data))
 
@@ -68,6 +64,44 @@ with DAG(
             data)
 
         logger.info("Uploaded models data to S3: %s", s3_key)
+
+        return s3_key
+    
+    @task(task_id="fetch_gpu_pricing")
+    def fetch_gpu_pricing():
+        data = fetch_data(GPU_PRICING_ENDPOINT)
+
+        logger.info("Fetched GPU pricing.")
+
+        # Generate S3 key for gpu pricing data
+        s3_key = generate_s3_key("raw/gpu_pricing", "gpu_pricing.json")
+
+        # Upload data to S3
+        upload_to_s3(
+            BUCKET_NAME,
+            s3_key,
+            data)
+
+        logger.info("Uploaded GPU pricing data to S3: %s", s3_key)
+
+        return s3_key
+    
+    @task(task_id="fetch_intelligence")
+    def fetch_intelligence():
+        data = fetch_data(INTELLIGENCE_ENDPOINT)
+
+        logger.info("Fetched intelligence data.")
+
+        # Generate S3 key for intelligence data
+        s3_key = generate_s3_key("raw/intelligence", "intelligence.json")
+
+        # Upload data to S3
+        upload_to_s3(
+            BUCKET_NAME,
+            s3_key,
+            data)
+
+        logger.info("Uploaded intelligence data to S3: %s", s3_key)
 
         return s3_key
     
@@ -151,8 +185,11 @@ with DAG(
         aws_conn_id="aws_default",
     )
 
+    # Define task dependencies
     news = fetch_news()
     models = fetch_models()
+    gpu_pricing = fetch_gpu_pricing()
+    intelligence = fetch_intelligence()
     transformed_news = transform_news_task(news)
     transformed_models = transform_models_task(models)
 
