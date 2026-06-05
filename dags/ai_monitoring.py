@@ -29,7 +29,7 @@ with DAG(
 ) as dag:
 
     ####################
-    # Ingestion Tasks
+    # Ingestion Layer
     ####################
     @task(task_id="fetch_news")
     def fetch_news():
@@ -70,7 +70,7 @@ with DAG(
         return s3_key
     
     ####################
-    # Transformation Tasks
+    # Transformation Layer
     ####################
     @task(task_id="transform_news")
     def transform_news_task(news_s3_key):
