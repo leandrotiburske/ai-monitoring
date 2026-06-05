@@ -4,6 +4,8 @@ import os
 
 import requests
 from airflow.sdk import DAG, task
+from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerOperator
+from airflow.providers.amazon.aws.operators.athena import AthenaOperator
 
 from utils.parquet import records_to_parquet_bytes
 from utils.s3 import generate_s3_key, retrieve_from_s3, upload_parquet_to_s3, upload_to_s3
@@ -120,8 +122,39 @@ with DAG(
         logger.info("Uploaded transformed providers data to S3: %s", providers_key)
 
         return {"models_key": models_key, "providers_key": providers_key}
+    
+    ####################
+    # Trigger Glue Crawler
+    ####################
+
+    crawler_name = "ai-monitoring-crawler"
+    run_glue_crawler = GlueCrawlerOperator(
+        task_id="run_glue_crawler",
+        config={"Name": crawler_name},
+        aws_conn_id="aws_default",
+        wait_for_completion=True,
+    )
+
+    ####################
+    # Run Athena Query
+    ####################
+
+    # Validate Glue Crawler results
+    run_athena_query = AthenaOperator(
+        task_id="run_athena_query",
+        query="""
+            SELECT COUNT(*)
+            FROM news
+        """,
+        database="ai-monitoring",
+        output_location=f"s3://{BUCKET_NAME}/athena-results/",
+        aws_conn_id="aws_default",
+    )
 
     news = fetch_news()
     models = fetch_models()
     transformed_news = transform_news_task(news)
     transformed_models = transform_models_task(models)
+
+    [transformed_news, transformed_models] >> run_glue_crawler
+    run_glue_crawler >> run_athena_query
