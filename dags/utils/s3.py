@@ -3,6 +3,8 @@ import boto3
 import io
 import json
 
+from botocore.exceptions import ClientError, NoCredentialsError
+
 def generate_s3_key(
         prefix: str,
         filename: str
@@ -35,11 +37,16 @@ def upload_to_s3(
     :param data: Data to upload
     :type data: dict
     """
-    s3 = boto3.client("s3")
-    s3.put_object(
-        Bucket=bucket_name,
-        Key=key,
-        Body=json.dumps(data, ensure_ascii=False))
+    try:
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=json.dumps(data, ensure_ascii=False))
+    except NoCredentialsError:
+        raise Exception("AWS credentials not found. Please configure your AWS credentials.")
+    except ClientError as e:
+        raise Exception(f"Failed to upload data to S3: {e}")
 
 def upload_parquet_to_s3(
     bucket_name: str,
@@ -59,13 +66,18 @@ def upload_parquet_to_s3(
     :param content_type: Content type for the S3 object
     :type content_type: str
     """
-    s3 = boto3.client("s3")
-    s3.put_object(
-        Bucket=bucket_name,
-        Key=key,
-        Body=data,
-        ContentType=content_type)
-
+    try:
+        s3 = boto3.client("s3")
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=data,
+            ContentType=content_type)
+    except NoCredentialsError:
+        raise Exception("AWS credentials not found. Please configure your AWS credentials.")
+    except ClientError as e:
+        raise Exception(f"Failed to upload Parquet data to S3: {e}")
+    
 def retrieve_from_s3(
         bucket_name: str,
         s3_key: str
@@ -80,6 +92,12 @@ def retrieve_from_s3(
     :return: The retrieved data
     :rtype: dict
     """
-    s3 = boto3.client("s3")
-    response = s3.get_object(Bucket=bucket_name, Key=s3_key)
-    return json.loads(response['Body'].read().decode('utf-8'))
+    try:
+        s3 = boto3.client("s3")
+        response = s3.get_object(Bucket=bucket_name, Key=s3_key)
+        return json.loads(response['Body'].read().decode('utf-8'))
+    except NoCredentialsError:
+        raise Exception("AWS credentials not found. Please configure your AWS credentials.")
+    except ClientError as e:
+        raise Exception(f"Failed to retrieve data from S3: {e}")
+
