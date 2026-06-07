@@ -9,7 +9,7 @@ from airflow.providers.amazon.aws.operators.athena import AthenaOperator
 from utils.ingestion import fetch_data
 from utils.parquet import records_to_parquet_bytes
 from utils.s3 import generate_s3_key, retrieve_from_s3, upload_parquet_to_s3, upload_to_s3
-from utils.transformation import transform_news as transform_news_records, transform_models as transform_models_records, transform_providers as transforms_providers_records
+from utils.transformation import transform_news as transform_news_records, transform_models as transform_models_records, transform_providers as transforms_providers_records, transform_gpu_records, transform_intelligence_records
 
 NEWS_ENDPOINT = "https://tensorfeed.ai/api/news?limit=10"
 MODELS_ENDPOINT = "https://tensorfeed.ai/api/models"
@@ -157,6 +157,45 @@ with DAG(
 
         return {"models_key": models_key, "providers_key": providers_key}
     
+    @task(task_id="transform_gpu_pricing")
+    def transform_gpu_pricing_task(gpu_pricing_s3_key):
+        # Retrieve gpu pricing data from s3
+        gpu_pricing_raw = retrieve_from_s3(BUCKET_NAME, gpu_pricing_s3_key)
+        gpu_pricing_transformed = transform_gpu_records(gpu_pricing_raw)
+
+        # Convert from list[dict] to parquet
+        gpu_pricing_parquet = records_to_parquet_bytes(gpu_pricing_transformed)
+
+        # Save parquet to S3
+        gpu_pricing_key = generate_s3_key("transformed/gpu_pricing", "gpu_pricing.parquet")
+
+        upload_parquet_to_s3(
+            BUCKET_NAME,
+            gpu_pricing_key,
+            gpu_pricing_parquet)
+        
+        logger.info("Uploaded transformed gpu pricing data to S3: %s", gpu_pricing_key)
+
+        return gpu_pricing_key
+    
+    @task(task_id="transform_intelligence")
+    def transform_intelligence_task(intelligence_s3_key):
+        # Retrieve intelligence data from s3
+        intelligence_raw = retrieve_from_s3(BUCKET_NAME, intelligence_s3_key)
+        intelligence_transformed = transform_intelligence_records(intelligence_raw)
+
+        # Convert from list[dict] to parquet
+        intelligence_parquet = records_to_parquet_bytes(intelligence_transformed)
+
+        # Save parquet to S3
+        intelligence_key = generate_s3_key("transformed/intelligence", "intelligence.parquet")
+        upload_parquet_to_s3(
+            BUCKET_NAME,
+            intelligence_key,
+            intelligence_parquet)
+        
+        logger.info("Uploaded transformed intelligence data to S3: %s", intelligence_key)
+    
     ####################
     # Trigger Glue Crawler
     ####################
@@ -192,6 +231,8 @@ with DAG(
     intelligence = fetch_intelligence()
     transformed_news = transform_news_task(news)
     transformed_models = transform_models_task(models)
+    transformed_gpu_pricing = transform_gpu_pricing_task(gpu_pricing)
+    transformed_intelligence = transform_intelligence_task(intelligence)
 
-    [transformed_news, transformed_models] >> run_glue_crawler
+    [transformed_news, transformed_models, transformed_gpu_pricing, transformed_intelligence] >> run_glue_crawler
     run_glue_crawler >> run_athena_query

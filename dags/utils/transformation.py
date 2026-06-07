@@ -55,3 +55,41 @@ def transform_news(raw: dict | list[dict]) -> list[dict]:
             "ingested_at": ingested_at,
         })
     return result
+
+def transform_intelligence_records(raw: dict) -> list[dict]:
+    ingested_at = datetime.now(timezone.utc).isoformat()
+    captured_date = raw.get("as_of")
+    result = []
+    for r in raw.get("models", []):
+        result.append({
+            "model_id": r["model_id"],
+            "name": r["name"],
+            "provider": r["provider"],
+            "tfii": r.get("tfii"),
+            "rank": r.get("rank"),
+            "captured_date": captured_date,
+            "ingested_at": ingested_at,
+        })
+    return result
+
+def transform_gpu_records(raw: dict) -> list[dict]:
+    ingested_at = datetime.now(timezone.utc).isoformat()
+    snapshot = raw.get("snapshot", {})
+    captured_date = snapshot.get("capturedAt")
+    result = []
+    for r in snapshot.get("offers", []):
+        result.append({
+            "provider":         r["provider"],
+            "gpu_raw":          r["gpu_raw"],
+            "gpu_canonical":    r["gpu_canonical"],
+            "vram_gb":          r["vram_gb"],
+            "on_demand_usd_hr": r["on_demand_usd_hr"],
+            "spot_usd_hr":      r["spot_usd_hr"],
+            "available_count":  r["available_count"],
+            "region":           r["region"] or "unknown",
+            "source_url":       r["source_url"],
+            "last_seen":        r["last_seen"],
+            "captured_date":    captured_date,
+            "ingested_at":      ingested_at,
+        })
+    return result
